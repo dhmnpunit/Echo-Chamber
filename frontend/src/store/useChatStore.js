@@ -15,7 +15,17 @@ export const useChatStore = create((set, get) => ({
     set({ isUsersLoading: true });
     try {
       const res = await axiosInstance.get("/messages/users");
-      set({ users: res.data });
+      // Initialize unread messages for all users
+      const unreadMessages = {};
+      res.data.forEach(user => {
+        if (!get().unreadMessages[user._id]) {
+          unreadMessages[user._id] = 0;
+        }
+      });
+      set(state => ({ 
+        users: res.data,
+        unreadMessages: { ...state.unreadMessages, ...unreadMessages }
+      }));
     } catch (error) {
       toast.error(error.response.data.message);
     } finally {
@@ -27,11 +37,13 @@ export const useChatStore = create((set, get) => ({
     set({ isMessagesLoading: true });
     try {
       const res = await axiosInstance.get(`/messages/${userId}`);
-      set({ messages: res.data });
-      // Clear unread messages when opening a chat
-      const unreadMessages = { ...get().unreadMessages };
-      delete unreadMessages[userId];
-      set({ unreadMessages });
+      set(state => ({
+        messages: res.data,
+        unreadMessages: {
+          ...state.unreadMessages,
+          [userId]: 0
+        }
+      }));
     } catch (error) {
       toast.error(error.response.data.message);
     } finally {
@@ -50,19 +62,31 @@ export const useChatStore = create((set, get) => ({
   },
 
   subscribeToMessages: () => {
-    const { selectedUser } = get();
     const socket = useAuthStore.getState().socket;
     
     socket.on("newMessage", (newMessage) => {
-      // If chat is not selected, increment unread count
-      if (!selectedUser || newMessage.senderId !== selectedUser._id) {
-        set((state) => ({
+      const { selectedUser } = get();
+      const currentUserId = useAuthStore.getState().user?._id;
+
+      // Don't count messages from ourselves
+      if (newMessage.senderId === currentUserId) {
+        return;
+      }
+
+      // Update messages if chat is open
+      if (selectedUser && newMessage.senderId === selectedUser._id) {
+        set(state => ({
+          messages: [...state.messages, newMessage]
+        }));
+      } else {
+        // Increment unread count for the sender
+        set(state => ({
           unreadMessages: {
             ...state.unreadMessages,
-            [newMessage.senderId]: (state.unreadMessages[newMessage.senderId] || 0) + 1,
-          },
+            [newMessage.senderId]: (state.unreadMessages[newMessage.senderId] || 0) + 1
+          }
         }));
-        
+
         // Show notification
         if (Notification.permission === "granted") {
           const sender = get().users.find(user => user._id === newMessage.senderId);
@@ -71,9 +95,6 @@ export const useChatStore = create((set, get) => ({
             icon: sender?.profilePic || "/avatar.png"
           });
         }
-      } else if (newMessage.senderId === selectedUser._id) {
-        // If chat is selected, add message to current chat
-        set({ messages: [...get().messages, newMessage] });
       }
     });
   },
@@ -83,12 +104,43 @@ export const useChatStore = create((set, get) => ({
     socket.off("newMessage");
   },
 
-  setSelectedUser: (selectedUser) => {
-    // Clear unread messages for the selected user
-    const unreadMessages = { ...get().unreadMessages };
-    if (selectedUser) {
-      delete unreadMessages[selectedUser._id];
-    }
-    set({ selectedUser, unreadMessages });
+  setSelectedUser: (user) => {
+    set(state => ({
+      selectedUser: user,
+      unreadMessages: user ? {
+        ...state.unreadMessages,
+        [user._id]: 0
+      } : state.unreadMessages
+    }));
   },
+
+  // Add method to manually clear unread messages for a user
+  clearUnreadMessages: (userId) => {
+    set(state => ({
+      unreadMessages: {
+        ...state.unreadMessages,
+        [userId]: 0
+      }
+    }));
+  },
+
+  // Add method to get unread count for a specific user
+  getUnreadCount: (userId) => {
+    return get().unreadMessages[userId] || 0;
+  }
 }));
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
