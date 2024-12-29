@@ -9,6 +9,7 @@ export const useChatStore = create((set, get) => ({
   selectedUser: null,
   isUsersLoading: false,
   isMessagesLoading: false,
+  unreadMessages: {}, // Track unread messages by userId
 
   getUsers: async () => {
     set({ isUsersLoading: true });
@@ -27,12 +28,17 @@ export const useChatStore = create((set, get) => ({
     try {
       const res = await axiosInstance.get(`/messages/${userId}`);
       set({ messages: res.data });
+      // Clear unread messages when opening a chat
+      const unreadMessages = { ...get().unreadMessages };
+      delete unreadMessages[userId];
+      set({ unreadMessages });
     } catch (error) {
       toast.error(error.response.data.message);
     } finally {
       set({ isMessagesLoading: false });
     }
   },
+
   sendMessage: async (messageData) => {
     const { selectedUser, messages } = get();
     try {
@@ -45,17 +51,30 @@ export const useChatStore = create((set, get) => ({
 
   subscribeToMessages: () => {
     const { selectedUser } = get();
-    if (!selectedUser) return;
-
     const socket = useAuthStore.getState().socket;
-
+    
     socket.on("newMessage", (newMessage) => {
-      const isMessageSentFromSelectedUser = newMessage.senderId === selectedUser._id;
-      if (!isMessageSentFromSelectedUser) return;
-
-      set({
-        messages: [...get().messages, newMessage],
-      });
+      // If chat is not selected, increment unread count
+      if (!selectedUser || newMessage.senderId !== selectedUser._id) {
+        set((state) => ({
+          unreadMessages: {
+            ...state.unreadMessages,
+            [newMessage.senderId]: (state.unreadMessages[newMessage.senderId] || 0) + 1,
+          },
+        }));
+        
+        // Show notification
+        if (Notification.permission === "granted") {
+          const sender = get().users.find(user => user._id === newMessage.senderId);
+          new Notification("New Message", {
+            body: `${sender?.fullName}: ${newMessage.text}`,
+            icon: sender?.profilePic || "/avatar.png"
+          });
+        }
+      } else if (newMessage.senderId === selectedUser._id) {
+        // If chat is selected, add message to current chat
+        set({ messages: [...get().messages, newMessage] });
+      }
     });
   },
 
@@ -64,5 +83,12 @@ export const useChatStore = create((set, get) => ({
     socket.off("newMessage");
   },
 
-  setSelectedUser: (selectedUser) => set({ selectedUser }),
+  setSelectedUser: (selectedUser) => {
+    // Clear unread messages for the selected user
+    const unreadMessages = { ...get().unreadMessages };
+    if (selectedUser) {
+      delete unreadMessages[selectedUser._id];
+    }
+    set({ selectedUser, unreadMessages });
+  },
 }));

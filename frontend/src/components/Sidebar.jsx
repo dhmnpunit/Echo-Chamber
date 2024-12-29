@@ -5,13 +5,23 @@ import SidebarSkeleton from "./skeletons/SidebarSkeleton";
 import { Users } from "lucide-react";
 
 const Sidebar = () => {
-  const { getUsers, users, selectedUser, setSelectedUser, isUsersLoading } = useChatStore();
-
+  const { 
+    getUsers, 
+    users, 
+    selectedUser, 
+    setSelectedUser, 
+    isUsersLoading,
+    unreadMessages 
+  } = useChatStore();
   const { onlineUsers } = useAuthStore();
   const [showOnlineOnly, setShowOnlineOnly] = useState(false);
 
   useEffect(() => {
     getUsers();
+    // Request notification permission
+    if (Notification.permission === "default") {
+      Notification.requestPermission();
+    }
   }, [getUsers]);
 
   const filteredUsers = showOnlineOnly
@@ -27,7 +37,6 @@ const Sidebar = () => {
           <Users className="size-6" />
           <span className="font-medium hidden lg:block">Contacts</span>
         </div>
-        {/* TODO: Online filter toggle */}
         <div className="mt-3 hidden lg:flex items-center gap-2">
           <label className="cursor-pointer flex items-center gap-2">
             <input
@@ -38,10 +47,11 @@ const Sidebar = () => {
             />
             <span className="text-sm">Show online only</span>
           </label>
-          <span className="text-xs text-zinc-500">({onlineUsers.length - 1} online)</span>
+          <span className="text-xs text-zinc-500">
+            ({onlineUsers.length - 1} online)
+          </span>
         </div>
       </div>
-
       <div className="overflow-y-auto w-full py-3">
         {filteredUsers.map((user) => (
           <button
@@ -61,12 +71,21 @@ const Sidebar = () => {
               />
               {onlineUsers.includes(user._id) && (
                 <span
-                  className="absolute bottom-0 right-0 size-3 bg-green-500 
-                  rounded-full ring-2 ring-zinc-900"
+                  className="absolute bottom-0 right-0 size-3 bg-green-500
+                    rounded-full ring-2 ring-zinc-900"
                 />
               )}
+              {unreadMessages[user._id] > 0 && (
+                <span
+                  className="absolute -top-1 -right-1 size-5 bg-primary
+                    rounded-full ring-2 ring-zinc-900 flex items-center justify-center"
+                >
+                  <span className="text-xs text-white font-bold">
+                    {unreadMessages[user._id]}
+                  </span>
+                </span>
+              )}
             </div>
-
             {/* User info - only visible on larger screens */}
             <div className="hidden lg:block text-left min-w-0">
               <div className="font-medium truncate">{user.fullName}</div>
@@ -76,7 +95,6 @@ const Sidebar = () => {
             </div>
           </button>
         ))}
-
         {filteredUsers.length === 0 && (
           <div className="text-center text-zinc-500 py-4">No online users</div>
         )}
@@ -84,4 +102,5 @@ const Sidebar = () => {
     </aside>
   );
 };
+
 export default Sidebar;
